@@ -1,0 +1,40 @@
+name: Merge Music
+
+on:
+  workflow_dispatch:   # Bisa dijalankan manual dari GitHub Action tab
+  push:
+    paths:
+      - "music/*.mp3"  # Jalan kalau ada musik baru di-push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install FFmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Merge all MP3 files
+        run: |
+          files=($(ls music/*.mp3 | sort))
+          filter=""
+          inputs=""
+          n=${#files[@]}
+          for i in "${!files[@]}"; do
+            inputs="$inputs -i ${files[$i]}"
+            if [ $i -lt $((n-1)) ]; then
+              # Crossfade tiap lagu (5 detik)
+              filter="$filter[$i:a][$(($i+1)):a]acrossfade=d=5:c1=tri:c2=tri[a$i];"
+            fi
+          done
+          last="[a$((n-2))]"
+          ffmpeg $inputs -filter_complex "${filter%?}$last" -c:a libmp3lame merged.mp3
+
+      - name: Upload merged music
+        uses: actions/upload-artifact@v3
+        with:
+          name: merged-music
+          path: merged.mp3
