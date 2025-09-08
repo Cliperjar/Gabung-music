@@ -1,10 +1,10 @@
 name: Merge Music
 
 on:
-  workflow_dispatch:   # Bisa dijalankan manual dari GitHub Action tab
+  workflow_dispatch:   # Bisa dijalankan manual dari tab Actions
   push:
     paths:
-      - "music/*.mp3"  # Jalan kalau ada musik baru di-push
+      - "music/*.mp3"  # Jalan otomatis kalau ada file musik baru di-push
 
 jobs:
   build:
@@ -15,23 +15,33 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install FFmpeg
-        run: sudo apt-get install -y ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
-      - name: Merge all MP3 files
+      - name: Merge all MP3 files with crossfade
         run: |
           files=($(ls music/*.mp3 | sort))
-          filter=""
           inputs=""
+          filter=""
           n=${#files[@]}
+
+          # masukkan semua file ke input
           for i in "${!files[@]}"; do
             inputs="$inputs -i ${files[$i]}"
-            if [ $i -lt $((n-1)) ]; then
-              # Crossfade tiap lagu (5 detik)
-              filter="$filter[$i:a][$(($i+1)):a]acrossfade=d=5:c1=tri:c2=tri[a$i];"
+          done
+
+          # bikin filter crossfade (5 detik antar lagu)
+          for i in $(seq 0 $((n-2))); do
+            if [ $i -eq 0 ]; then
+              filter="[0:a][1:a]acrossfade=d=5:c1=tri:c2=tri[a1]"
+            else
+              filter="$filter;[a$i][$(($i+1)):a]acrossfade=d=5:c1=tri:c2=tri[a$(($i+1))]"
             fi
           done
-          last="[a$((n-2))]"
-          ffmpeg $inputs -filter_complex "${filter%?}$last" -c:a libmp3lame merged.mp3
+
+          last="[a$((n-1))]"
+          ffmpeg $inputs -filter_complex "$filter" -map "$last" -c:a libmp3lame merged.mp3
 
       - name: Upload merged music
         uses: actions/upload-artifact@v4
