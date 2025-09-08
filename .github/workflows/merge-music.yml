@@ -34,7 +34,7 @@ jobs:
           ffmpeg $inputs -filter_complex "${filter%?}$last" -c:a libmp3lame merged.mp3
 
       - name: Upload merged music
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: merged-music
           path: merged.mp3
