@@ -1,10 +1,10 @@
 name: Merge Music
 
 on:
-  workflow_dispatch:   # Bisa dijalankan manual
+  workflow_dispatch:
   push:
     paths:
-      - "music/*.mp3"  # Jalan kalau ada musik baru di-push
+      - "music/*.mp3"
 
 jobs:
   build:
@@ -23,8 +23,12 @@ jobs:
         run: |
           mkdir fixed
           for f in music/*.mp3; do
-            echo "Processing $f ..."
-            ffmpeg -y -i "$f" -acodec libmp3lame -ar 44100 -ab 192k "fixed/$(basename "$f")"
+            if [ -s "$f" ]; then
+              echo "Re-encoding $f ..."
+              ffmpeg -y -i "$f" -vn -acodec libmp3lame -ar 44100 -ab 192k "fixed/$(basename "$f")" || true
+            else
+              echo "Skipping empty file $f"
+            fi
           done
           rm -rf music
           mv fixed music
@@ -32,30 +36,38 @@ jobs:
       - name: Merge all MP3 files with crossfade
         run: |
           files=(music/*.mp3)
-          inputs=""
-          filter=""
           n=${#files[@]}
 
-          # masukin semua file
-          for f in "${files[@]}"; do
-            inputs="$inputs -i \"$f\""
-          done
+          if [ $n -eq 0 ]; then
+            echo "No MP3 files found!"
+            exit 1
+          elif [ $n -eq 1 ]; then
+            echo "Only one file, copying directly..."
+            ffmpeg -y -i "${files[0]}" -c:a libmp3lame merged.mp3
+          else
+            inputs=""
+            filter=""
 
-          # bikin filter crossfade 5 detik antar lagu
-          for i in $(seq 0 $((n-2))); do
-            if [ $i -eq 0 ]; then
-              filter="[0:a][1:a]acrossfade=d=5:c1=tri:c2=tri[a1]"
-            else
-              filter="$filter;[a$i][$(($i+1)):a]acrossfade=d=5:c1=tri:c2=tri[a$(($i+1))]"
-            fi
-          done
+            for f in "${files[@]}"; do
+              inputs="$inputs -vn -i \"$f\""
+            done
 
-          last="[a$((n-1))]"
+            for i in $(seq 0 $((n-2))); do
+              if [ $i -eq 0 ]; then
+                filter="[0:a][1:a]acrossfade=d=5:c1=tri:c2=tri[a1]"
+              else
+                filter="$filter;[a$i][$(($i+1)):a]acrossfade=d=5:c1=tri:c2=tri[a$(($i+1))]"
+              fi
+            done
 
-          eval ffmpeg $inputs -filter_complex "$filter" -map "$last" -c:a libmp3lame merged.mp3
+            last="[a$((n-1))]"
+
+            eval ffmpeg $inputs -filter_complex "$filter" -map "$last" -c:a libmp3lame merged.mp3
+          fi
 
       - name: Upload merged music
         uses: actions/upload-artifact@v4
         with:
           name: merged-music
           path: merged.mp3
+          retention-days: 1
